@@ -29,7 +29,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 // Bumped whenever the wire behaviour changes. Logged at boot by dump_config so
 // a stale cached copy of this component can be spotted immediately.
-#define TWC_CONTROLLER_BUILD "2026-08-15 checksum+proto-detect"
+#define TWC_CONTROLLER_BUILD "2026-08-15 checksum+proto-detect+state-text"
 
 #define GET_SERIAL_NUMBER_OLD	0xFB19
 #define GET_MODEL_NUMBER	    0xFB1A

@@ -140,8 +140,46 @@ namespace esphome {
             this->connected_vin_text_sensor_->publish_state(vin);
         }
 
+        // Secondary heartbeat state codes, per the protocol notes in
+        // ngardiner/TWCManager.
+        //
+        // 06, 07 and 09 are not car states at all: on protocol 2 the secondary
+        // echoes back whichever command the primary just sent it, so they say what
+        // we asked for rather than what the car is doing. They show up briefly
+        // whenever the limit changes and then give way to the real state.
+        static const char *ChargerStateToString(uint8_t state) {
+            switch (state) {
+                case 0x00: return "Ready";
+                case 0x01: return "Charging";
+                case 0x02: return "Error";
+                case 0x03: return "Plugged in, not charging";
+                case 0x04: return "Plugged in, ready to charge";
+                case 0x05: return "Busy";
+                case 0x06: return "Raising current";
+                case 0x07: return "Lowering current";
+                case 0x08: return "Starting to charge";
+                case 0x09: return "Limit acknowledged";
+                case 0x0A: return "Current adjustment complete";
+                default:   return nullptr;
+            }
+        }
+
         void TWCController::writeChargerState(uint16_t twcid, uint8_t state) {
-            this->state_sensor_->publish_state((float)state);
+            // Both sensors are optional, and configuring only the text one is a
+            // perfectly reasonable thing to want.
+            if (this->state_sensor_ != nullptr) {
+                this->state_sensor_->publish_state((float)state);
+            }
+
+            if (this->state_text_text_sensor_ != nullptr) {
+                if (const char *text = ChargerStateToString(state)) {
+                    this->state_text_text_sensor_->publish_state(text);
+                } else {
+                    char buffer[20];
+                    snprintf(buffer, sizeof(buffer), "Unknown (0x%02X)", state);
+                    this->state_text_text_sensor_->publish_state(buffer);
+                }
+            }
         }
 
         void TWCController::writeTotalConnectedCars(uint8_t connected_cars) {

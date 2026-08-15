@@ -61,6 +61,7 @@ namespace esphome {
                 SUB_TEXT_SENSOR(serial)
                 SUB_TEXT_SENSOR(firmware_version)
                 SUB_TEXT_SENSOR(connected_vin)
+                SUB_TEXT_SENSOR(state_text)
 
 /* IO Functions */
                 void resetIO(uint16_t);

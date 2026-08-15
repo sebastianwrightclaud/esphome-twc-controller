@@ -43,6 +43,7 @@ CONF_PHASE_3_CURRENT = "phase_3_current"
 CONF_FIRMWARE_VERSION = "firmware_version"
 CONF_ACTUAL_CURRENT = "actual_current"
 CONF_VIN = "connected_vin"
+CONF_STATE_TEXT = "state_text"
 CONF_PASSIVE_MODE = "passive_mode"
 
 CONF_MIN_CURRENT = "min_current"
@@ -54,6 +55,7 @@ ICON_CURRENT_AC = "mdi:current-ac"
 ICON_CAR = "mdi:car"
 ICON_NUMERIC = "mdi:numeric"
 ICON_LIGHTNING_BOLT = "mdi:lightning-bolt"
+ICON_EV_STATION = "mdi:ev-station"
 
 AUTO_LOAD = ["number", "sensor", "text_sensor"]
 DEPENDENCIES = ["uart"]
@@ -61,7 +63,8 @@ DEPENDENCIES = ["uart"]
 TEXT_TYPES = [
     CONF_SERIAL,
     CONF_FIRMWARE_VERSION,
-    CONF_VIN
+    CONF_VIN,
+    CONF_STATE_TEXT
 ]
 
 TYPES = [
@@ -188,6 +191,9 @@ CONFIG_SCHEMA = cv.All(
             cv.Optional(CONF_STATE): sensor.sensor_schema(
                 icon=ICON_CURRENT_AC,
                 accuracy_decimals=0,
+            ),
+            cv.Optional(CONF_STATE_TEXT): text_sensor.text_sensor_schema(
+                icon=ICON_EV_STATION,
             ),
         }
     )

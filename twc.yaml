@@ -65,3 +65,5 @@ twc-controller:
     name: "Connected VIN"
   state:
     name: "State"
+  state_text:
+    name: "Status"
