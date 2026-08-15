@@ -33,6 +33,12 @@ namespace esphome {
             teslaController_->SetMinCurrent(this->min_current_);
             teslaController_->SetMaxCurrent(this->max_current_);
 
+            // Seed the controller with the state we just published.  control() is the
+            // only other path into SetCurrent(), so without this the controller would
+            // have no allocation at all until something writes to the number, and the
+            // heartbeat would advertise a limit that doesn't match the reported state.
+            teslaController_->SetCurrent(this->min_current_);
+
             teslaController_->Begin();
             teslaController_->Startup();
         }

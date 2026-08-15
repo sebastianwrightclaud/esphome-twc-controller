@@ -34,11 +34,15 @@ namespace esphome {
             num_connected_chargers_(0),
             twcid_(twcid),
             sign_(0x77),
+            receive_index_(0),
+            available_current_(0),
             max_current_(0),
             min_current_(0),
             stopstart_delay_(0),
+            current_changed_(false),
             debug_(false),
-            passive_mode_(passive_mode)
+            passive_mode_(passive_mode),
+            total_current_(0)
         {
         }
 
@@ -137,8 +141,15 @@ namespace esphome {
 
                 if (receive_index_ > MAX_PACKET_LENGTH-1) {
                     ESP_LOGE(TAG, "Packet length exceeded");
+                    // Abandon the frame entirely rather than just rewinding the index.
+                    // Leaving message_started_ set meant the following bytes were still
+                    // treated as packet data, so a single corrupt byte overflowed the
+                    // buffer again and again.  Returning also discarded the rest of the
+                    // UART buffer while still believing we were mid-frame - keep draining
+                    // it instead so the next start frame can resynchronise.
+                    message_started_ = false;
                     receive_index_ = 0;
-                    return;
+                    continue;
                 }
 
                 switch (receivedChar) {
@@ -567,6 +578,11 @@ namespace esphome {
 
             TeslaConnector *c = GetConnector(heartbeat->src_twcid);
 
+            if (!c) {
+                // Heartbeat from a charger we've never seen a presence message for.
+                return;
+            }
+
             // If the secondary changes it's state to 4, it's most likely because
             // it's about to start charging.  Set the current changed flag
             // so that we send the max current to the secondary again.
@@ -578,6 +594,24 @@ namespace esphome {
                 c->state = heartbeat->state;
                 UpdateTotalConnectedCars();
                 controller_io_->writeChargerState(heartbeat->src_twcid, c->state);
+            }
+
+            // The secondary reports back the limit it believes it has been allocated,
+            // so use that as feedback rather than relying purely on state transitions.
+            //
+            // SendHeartbeat() only emits the 0x09 limit command while current_changed_
+            // is set, and the controller task clears that flag after a single pass.
+            // The only thing that re-armed it was a state transition to exactly 4, so
+            // if the TWC was already in state 4 when a car was plugged in - or if the
+            // limit command was simply lost - we would send 0x00 ("make no changes")
+            // forever and the TWC would fall back to its own default of roughly 5A.
+            //
+            // Re-assert the limit whenever the secondary disagrees with us.  Zero is
+            // always re-asserted so that a dropped stop command can never leave a car
+            // charging.
+            uint16_t reported_max_current = ntohs(heartbeat->max_current);
+            if (reported_max_current != (uint16_t)(available_current_ * 100) || available_current_ == 0) {
+                current_changed_ = true;
             }
 
 
