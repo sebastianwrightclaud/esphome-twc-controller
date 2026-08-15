@@ -41,6 +41,7 @@ namespace esphome {
             stopstart_delay_(0),
             // Assume protocol 2 until a message length tells us otherwise.
             protocol_version_(2),
+            protocol_detected_(false),
             // Sentinels so the first heartbeat always logs what it sent.
             last_sent_state_(0xFF),
             last_sent_current_(0xFFFF),
@@ -611,11 +612,21 @@ namespace esphome {
             if (length != 14 && length != 16) return;
 
             uint8_t detected_version = (length == 16) ? 2 : 1;
-            if (detected_version == protocol_version_) return;
+
+            // Report the first detection even when it agrees with the assumed
+            // default, otherwise a protocol 2 secondary never logs anything and
+            // there is no way to tell detection from a stale build.
+            if (protocol_detected_ && detected_version == protocol_version_) return;
 
             ESP_LOGI(TAG, "Secondary %04x speaks protocol %d (%d byte message)",
                 twcid, detected_version, (int)length);
+
+            bool was_detected = protocol_detected_;
+            bool changed = (detected_version != protocol_version_);
+            protocol_detected_ = true;
             protocol_version_ = detected_version;
+
+            if (was_detected && !changed) return;
 
             // Re-send the limit using the opcode and frame length this protocol
             // actually accepts.

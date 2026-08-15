@@ -27,6 +27,10 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 #define MAX_PACKET_LENGTH 32
 
+// Bumped whenever the wire behaviour changes. Logged at boot by dump_config so
+// a stale cached copy of this component can be spotted immediately.
+#define TWC_CONTROLLER_BUILD "2026-08-15 checksum+proto-detect"
+
 #define GET_SERIAL_NUMBER_OLD	0xFB19
 #define GET_MODEL_NUMBER	    0xFB1A
 #define GET_FIRMWARE_VER 	    0xFB1B
@@ -232,6 +236,7 @@ namespace esphome {
                 // 1 or 2, learned from the length of the secondary's heartbeat.
                 // Decides both the "limit power" opcode and the heartbeat length.
                 uint8_t protocol_version_;
+                bool protocol_detected_;
                 uint8_t last_sent_state_;
                 uint16_t last_sent_current_;
                 bool current_changed_;

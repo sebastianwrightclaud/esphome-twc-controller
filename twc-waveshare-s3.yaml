@@ -1,0 +1,89 @@
+# Tesla Wall Connector Gen 2 (rotary switch F / secondary) driven from a
+# Waveshare ESP32-S3-RS485-CAN (SKU 32154).
+#
+# Differences from twc.yaml, which targets a plain esp32dev board:
+#   - S3 board and pinout: RS485 TX 17, RX 18, DE/RE 21
+#   - flow_control_pin is required; this board is not auto-direction
+#   - 80A capable connector rather than 32A
+#   - external_components points at this fork, pinned to a branch, with
+#     refresh: always so a cached clone can never mask a push
+
+esphome:
+  name: twc
+  friendly_name: Tesla Wall Connector
+
+esp32:
+  board: esp32s3box
+  framework:
+    type: esp-idf
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+logger:
+  level: DEBUG
+
+ota:
+  - platform: esphome
+
+api:
+
+uart:
+  id: twc_uart
+  tx_pin: GPIO17
+  rx_pin: GPIO18
+  baud_rate: 9600
+  data_bits: 8
+  parity: NONE
+  stop_bits: 1
+
+external_components:
+  # refresh: always defeats the 1 day clone cache. Once things are stable you
+  # can drop it back to the 1d default, or pin @<tag> instead of @main.
+  - source: github://sebastianwrightclaud/esphome-twc-controller@main
+    components: [twc-controller]
+    refresh: always
+
+twc-controller:
+  id: twc
+  uart_id: twc_uart
+
+  # min_current: 0 is what lets a 0A stop command through SetCurrent()'s clamp.
+  # It also means the controller boots blocked, so set_current decides what we
+  # actually come up at.
+  min_current: 0
+  max_current: 80
+  set_current: 80
+
+  twc_id: 0xAB32
+  flow_control_pin: GPIO21
+
+  current:
+    name: "Charging Current"
+  max_allowable_current:
+    name: "Maximum Allowable Current"
+  total_kwh_delivered:
+    name: "Total kWh Delivered"
+  serial:
+    name: "Serial"
+  phase_1_voltage:
+    name: "Phase 1 Voltage"
+  phase_2_voltage:
+    name: "Phase 2 Voltage"
+  phase_3_voltage:
+    name: "Phase 3 Voltage"
+  phase_1_current:
+    name: "Phase 1 Current"
+  phase_2_current:
+    name: "Phase 2 Current"
+  phase_3_current:
+    name: "Phase 3 Current"
+  firmware_version:
+    name: "Firmware Version"
+  actual_current:
+    name: "Actual Current"
+  connected_vin:
+    name: "Connected VIN"
+  state:
+    name: "State"

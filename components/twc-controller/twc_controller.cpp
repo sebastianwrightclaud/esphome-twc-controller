@@ -169,6 +169,10 @@ namespace esphome {
         }
 
         void TWCController::print_params_() {
+            // Printed unconditionally at boot so it is obvious which build is
+            // actually on the device - external_components caches git clones for a
+            // day by default, so a stale component is easy to miss.
+            ESP_LOGCONFIG(TAG,"  Build: %s", TWC_CONTROLLER_BUILD);
             ESP_LOGCONFIG(TAG,"  TWC ID: 0x%s", format_hex(this->twcid_).c_str());
             ESP_LOGCONFIG(TAG,"  Min Current: %d", this->min_current_);
             ESP_LOGCONFIG(TAG,"  Max Current: %d", this->max_current_);
