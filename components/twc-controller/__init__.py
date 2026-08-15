@@ -219,6 +219,9 @@ async def to_code(config):
 
     cg.add(num_var.set_min_current(config[CONF_MIN_CURRENT]))
     cg.add(num_var.set_max_current(config[CONF_MAX_CURRENT]))
+    # set_current was validated but never applied, so the controller always came up
+    # at min_current - which with min_current: 0 means booting to a hard stop.
+    cg.add(num_var.set_initial_current(config.get(CONF_SET_CURRENT, config[CONF_MIN_CURRENT])))
     cg.add(num_var.set_twcid(config[CONF_TWCID]))
     cg.add(num_var.set_passive_mode(config[CONF_PASSIVE_MODE]))
 

@@ -40,6 +40,7 @@ namespace esphome {
 
                 void set_min_current(uint8_t current);
                 void set_max_current(uint8_t current);
+                void set_initial_current(uint8_t current) { this->initial_current_ = current; }
                 void set_twcid(uint16_t);
 
                 void set_passive_mode(int passive_mode) { this->passive_mode_ = passive_mode; }
@@ -90,6 +91,7 @@ namespace esphome {
                 std::function<void(uint8_t)> onCurrentMessageCallback_=nullptr;
                 uint8_t min_current_;
                 uint8_t max_current_;
+                uint8_t initial_current_{0};
                 uint16_t twcid_;
                 uint8_t passive_mode_;
         };

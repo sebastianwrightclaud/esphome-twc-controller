@@ -184,8 +184,9 @@ namespace esphome {
                 void DecodePowerState(EXTENDED_RESP_PACKET_T *power_state);
                 void DecodePrimaryPresence(RESP_PACKET_T *presence, uint8_t num);
                 void DecodePrimaryHeartbeat(P_HEARTBEAT_T *heartbeat);
-                void DecodeSecondaryPresence(RESP_PACKET_T *presence);
-                void DecodeSecondaryHeartbeat(S_HEARTBEAT_T *heartbeat);
+                void DecodeSecondaryPresence(RESP_PACKET_T *presence, size_t length);
+                void DetectProtocolVersion(size_t length, uint16_t twcid);
+                void DecodeSecondaryHeartbeat(S_HEARTBEAT_T *heartbeat, size_t length);
                 void DecodeVin(EXTENDED_RESP_PACKET_T *vin);
                 void DecodeExtFirmwareVerison(RESP_PACKET_T *firmware_ver);
                 void DecodeSerialNumber(EXTENDED_RESP_PACKET_T *serial);
@@ -204,6 +205,7 @@ namespace esphome {
 
             private:
                 uint8_t CalculateChecksum(uint8_t *buffer, size_t length);
+                bool encoded_current_changed_(const uint8_t *packet);
                 bool VerifyChecksum(uint8_t *buffer, size_t length);
                 void DecodeLinkReady();
                 void DecodePrimaryHeartbeat();
@@ -227,6 +229,11 @@ namespace esphome {
                 uint8_t max_current_;
                 uint8_t min_current_;
                 uint16_t stopstart_delay_;
+                // 1 or 2, learned from the length of the secondary's heartbeat.
+                // Decides both the "limit power" opcode and the heartbeat length.
+                uint8_t protocol_version_;
+                uint8_t last_sent_state_;
+                uint16_t last_sent_current_;
                 bool current_changed_;
                 bool debug_;
                 uint8_t passive_mode_;

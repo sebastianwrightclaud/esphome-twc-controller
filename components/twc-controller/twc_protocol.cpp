@@ -39,6 +39,11 @@ namespace esphome {
             max_current_(0),
             min_current_(0),
             stopstart_delay_(0),
+            // Assume protocol 2 until a message length tells us otherwise.
+            protocol_version_(2),
+            // Sentinels so the first heartbeat always logs what it sent.
+            last_sent_state_(0xFF),
+            last_sent_current_(0xFFFF),
             current_changed_(false),
             debug_(false),
             passive_mode_(passive_mode),
@@ -263,17 +268,22 @@ namespace esphome {
         }
 
         void TeslaController::SendPresence(bool presence2) {
-        RESP_PACKET_T presence;
+        RESP_PACKET_T presence = {};
         PRESENCE_PAYLOAD_T *presence_payload = (PRESENCE_PAYLOAD_T *)&presence.payload;
 
         presence.command = presence2 ? htons(PRIMARY_PRESENCE2) : htons(PRIMARY_PRESENCE);
         presence.twcid = twcid_;
         presence_payload->sign =  sign_;
-        presence_payload->max_allowable_current = 0x0C80; // TODO: Repalce this with something not hard coded.
-        for (uint8_t i = 0; i <= 7; i++) {
-            presence_payload->padding[i] = 0x00;
-        }
-        presence.checksum = CalculateChecksum((uint8_t*)&presence, sizeof(presence));
+
+        // This used to be hard coded to 0x0C80 (32.00A), which advertises us as a
+        // 32A capable primary no matter what the installation actually is.  Report
+        // the configured maximum instead - secondaries expect the chargers sharing a
+        // bus to agree on their current capability.
+        presence_payload->max_allowable_current = htons((uint16_t)(max_current_ * 100));
+
+        // Exclude the checksum byte itself from the sum - it is uninitialised at this
+        // point, and including it produced a checksum the secondary rejects.
+        presence.checksum = CalculateChecksum((uint8_t*)&presence, sizeof(presence) - 1);
 
         SendData((uint8_t*)&presence, sizeof(presence));
         }
@@ -295,42 +305,71 @@ namespace esphome {
         }
 
         void TeslaController::SendHeartbeat(uint16_t secondary_twcid) {
-            P_HEARTBEAT_T heartbeat;
-            heartbeat.command = htons(PRIMARY_HEARTBEAT);
-            heartbeat.src_twcid = twcid_;
-            heartbeat.dst_twcid = secondary_twcid;
+            // A primary heartbeat carries a 7 byte payload on protocol 1 (14 byte
+            // message) and a 9 byte payload on protocol 2 (16 byte message).  Sending
+            // the wrong length is rejected outright, so build the frame to suit
+            // whatever the secondary has told us it speaks.
+            const uint8_t payload_length = (protocol_version_ == 2) ? 9 : 7;
+            const size_t packet_length = 6 + payload_length + 1;
+
+            uint8_t packet[sizeof(P_HEARTBEAT_T)] = {0};
+
+            uint16_t command = htons(PRIMARY_HEARTBEAT);
+            memcpy(&packet[0], &command, sizeof(command));
+            // twcid_ and secondary_twcid are deliberately copied in native byte order
+            // to match the rest of this component - the ID is opaque and only ever
+            // compared against itself.
+            memcpy(&packet[2], &twcid_, sizeof(twcid_));
+            memcpy(&packet[4], &secondary_twcid, sizeof(secondary_twcid));
 
             if (current_changed_) {
                 uint16_t encodedMax = available_current_ * 100;
-                heartbeat.state = 0x09; // Limit power to the value from the next two bytes
 
-                // current * 100 (to get it to a whole number)
-                heartbeat.max_current = htons(encodedMax);
+                // 0x09 is the protocol 2 replacement for 0x05.  They are not
+                // interchangeable: a protocol 1 secondary does not know 0x09, and a
+                // protocol 2 secondary silently ignores 0x05 once a car has already
+                // started charging.
+                packet[6] = (protocol_version_ == 2) ? 0x09 : 0x05;
+                packet[7] = (encodedMax >> 8) & 0xFF;
+                packet[8] = encodedMax & 0xFF;
             } else {
-                heartbeat.state = 0x00;
-                heartbeat.max_current = 0x00;
+                packet[6] = 0x00; // Make no changes
             }
 
-            heartbeat.plug_inserted = 0x00;
+            // packet[9] is the "primary is plugged into a car" flag, which we never
+            // are.  Everything after it stays zero.
 
-            for (uint8_t i = 0; i < 5; i++) {
-            heartbeat.padding[i] = 0x00;
+            // The checksum covers bytes 1 through n-2 - it must not include the
+            // checksum byte itself, which is what CalculateChecksum's length argument
+            // means here.
+            packet[packet_length - 1] = CalculateChecksum(packet, packet_length - 1);
+
+            if (packet[6] != last_sent_state_ || encoded_current_changed_(packet)) {
+                ESP_LOGI(TAG, "Heartbeat -> %04x: protocol %d, state %02x, limit %d (%d A)",
+                    secondary_twcid,
+                    protocol_version_,
+                    packet[6],
+                    (packet[7] << 8) | packet[8],
+                    available_current_
+                );
+                last_sent_state_ = packet[6];
+                last_sent_current_ = (packet[7] << 8) | packet[8];
             }
 
-            heartbeat.checksum = CalculateChecksum((uint8_t*)&heartbeat, sizeof(heartbeat));
+            SendData(packet, packet_length);
+        }
 
-            SendData((uint8_t*)&heartbeat, sizeof(heartbeat));
+        bool TeslaController::encoded_current_changed_(const uint8_t *packet) {
+            return (uint16_t)((packet[7] << 8) | packet[8]) != last_sent_current_;
         }
 
         void TeslaController::SendCommand(uint16_t command, uint16_t send_to) {
-            PACKET_T packet;
+            PACKET_T packet = {};
             packet.command = htons(command);
             packet.twcid = twcid_;
             packet.secondary_twcid = send_to;
-            for (uint8_t i = 0; i < 6; i++) {
-                packet.payload[i] = 0x00;
-            }
-            packet.checksum = CalculateChecksum((uint8_t*)&packet, sizeof(packet));
+            // As above - the checksum must not cover itself.
+            packet.checksum = CalculateChecksum((uint8_t*)&packet, sizeof(packet) - 1);
             SendData((uint8_t*)&packet, sizeof(packet));
         }
 
@@ -565,7 +604,33 @@ namespace esphome {
             SendData((uint8_t*)&reply, sizeof(reply));*/
         }
 
-        void TeslaController::DecodeSecondaryHeartbeat(S_HEARTBEAT_T *heartbeat) {
+        // Protocol 1 messages are 14 bytes, protocol 2 messages are 16.  The message
+        // length is the only thing that tells us which dialect a TWC speaks, and we
+        // have to know before we can send it a limit it will act on.
+        void TeslaController::DetectProtocolVersion(size_t length, uint16_t twcid) {
+            if (length != 14 && length != 16) return;
+
+            uint8_t detected_version = (length == 16) ? 2 : 1;
+            if (detected_version == protocol_version_) return;
+
+            ESP_LOGI(TAG, "Secondary %04x speaks protocol %d (%d byte message)",
+                twcid, detected_version, (int)length);
+            protocol_version_ = detected_version;
+
+            // Re-send the limit using the opcode and frame length this protocol
+            // actually accepts.
+            current_changed_ = true;
+        }
+
+        void TeslaController::DecodeSecondaryHeartbeat(S_HEARTBEAT_T *heartbeat, size_t length) {
+            // Need through actual_current (offset 9-10) to decode anything useful.
+            if (length < 11) {
+                ESP_LOGW(TAG, "Ignoring short secondary heartbeat (%d bytes)", (int)length);
+                return;
+            }
+
+            DetectProtocolVersion(length, heartbeat->src_twcid);
+
             if (debug_) {
                 ESP_LOGD(TAG, "Decoded: Secondary Heartbeat: ID: %02x, To: %02x, Status: %02x, Max Current: %d, Actual Current: %d\r\n",
                     heartbeat->src_twcid,
@@ -646,8 +711,13 @@ namespace esphome {
             return nullptr;
         }
 
-        void TeslaController::DecodeSecondaryPresence(RESP_PACKET_T *presence) {
+        void TeslaController::DecodeSecondaryPresence(RESP_PACKET_T *presence, size_t length) {
             PRESENCE_PAYLOAD_T *presence_payload = (PRESENCE_PAYLOAD_T *)presence->payload;
+
+            // The secondary sends this unprompted, so it is the reliable place to
+            // learn the protocol version - unlike the heartbeat, it still arrives
+            // when our own heartbeats are being rejected.
+            DetectProtocolVersion(length, presence->twcid);
 
             TeslaConnector *connector = GetConnector(presence->twcid);
 
@@ -778,10 +848,10 @@ namespace esphome {
                     DecodePrimaryPresence((RESP_PACKET_T *)packet, 2);
                     break;
                 case SECONDARY_PRESENCE:
-                    DecodeSecondaryPresence((RESP_PACKET_T *)packet);
+                    DecodeSecondaryPresence((RESP_PACKET_T *)packet, length);
                     break;
                 case SECONDARY_HEARTBEAT:
-                    DecodeSecondaryHeartbeat((S_HEARTBEAT_T *)packet);
+                    DecodeSecondaryHeartbeat((S_HEARTBEAT_T *)packet, length);
                     break;
                 case RESP_VIN_FIRST:
                 case RESP_VIN_MIDDLE:

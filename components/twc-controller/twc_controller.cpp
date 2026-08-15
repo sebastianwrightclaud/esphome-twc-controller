@@ -26,7 +26,7 @@ namespace esphome {
                 this->flow_control_pin_->setup();
             }
 
-            this->publish_state(this->min_current_);
+            this->publish_state(this->initial_current_);
 
             teslaController_ = new TeslaController(this->parent_, this, twcid_, flow_control_pin_, passive_mode_);
 
@@ -37,7 +37,7 @@ namespace esphome {
             // only other path into SetCurrent(), so without this the controller would
             // have no allocation at all until something writes to the number, and the
             // heartbeat would advertise a limit that doesn't match the reported state.
-            teslaController_->SetCurrent(this->min_current_);
+            teslaController_->SetCurrent(this->initial_current_);
 
             teslaController_->Begin();
             teslaController_->Startup();
